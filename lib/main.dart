@@ -1,12 +1,7 @@
 // ignore_for_file: prefer_const_constructors
 
+import 'package:calculadora_imc/database_helper.dart';
 import 'package:flutter/material.dart';
-
-void main() {
-  runApp(MaterialApp(
-    home: PesoApp(),
-  ));
-}
 
 class PesoApp extends StatefulWidget {
   const PesoApp({super.key});
@@ -16,29 +11,37 @@ class PesoApp extends StatefulWidget {
 }
 
 class _PesoAppState extends State<PesoApp> {
-  List<Peso> pesos = [];
   TextEditingController pesoController = TextEditingController();
   TextEditingController alturaController = TextEditingController();
 
-  void _calcularIMC() {
+  void _calcularIMC() async {
     double peso = double.tryParse(pesoController.text) ?? 0.0;
     double altura = double.tryParse(alturaController.text) ?? 0.0;
 
     if (peso <= 0 || altura <= 0) {
-      _mostrarErro("Peso e altura devem ser maiores que zero.");
+      _mostrarErro("Peso e altura devem ser maiores que zero.", context);
       return;
     }
-    double imc = peso / (altura * altura);  
+    double imc = peso / (altura * altura);
     String classificacao = _classificarIMC(imc);
 
-    setState(() {
-      pesos.add(Peso(peso: peso, altura: altura, imc: imc, classificacao: classificacao));
+    try {
+      await DatabaseHelper.instance.insert({
+        DatabaseHelper.columnPeso: peso,
+        DatabaseHelper.columnAltura: altura,
+        DatabaseHelper.columnImc: imc,
+        DatabaseHelper.columnClassificacao: classificacao,
+      });
+
       pesoController.clear();
       alturaController.clear();
-    });
+
+      setState(() {});
+    } catch (e) {
+      print("Erro ao salvar os dados.: $e");
+      _mostrarErro("Erro ao salvar os dados.", context);
+    }
   }
-
-
 
   String _classificarIMC(double imc) {
     if (imc < 16) {
@@ -60,7 +63,7 @@ class _PesoAppState extends State<PesoApp> {
     }
   }
 
-  void _mostrarErro(String mensagem) {
+  void _mostrarErro(String mensagem, context) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
@@ -79,7 +82,6 @@ class _PesoAppState extends State<PesoApp> {
       },
     );
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -106,13 +108,26 @@ class _PesoAppState extends State<PesoApp> {
               child: const Text("Calcular"),
             ),
             Expanded(
-              child: ListView.builder(
-                itemCount: pesos.length,
-                itemBuilder: (context, index) {
-                  return ListTile(
-                    title: Text("Peso: ${pesos[index].peso.toStringAsFixed(2)} kg, Altura: ${pesos[index].altura.toStringAsFixed(2)} m"),
-                    subtitle: Text("IMC: ${pesos[index].imc.toStringAsFixed(2)} - ${pesos[index].classificacao}"),
-                  );
+              child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: DatabaseHelper.instance.queryAllRows(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasData) {
+                    return ListView.builder(
+                      itemCount: snapshot.data!.length,
+                      itemBuilder: (context, index) {
+                        return ListTile(
+                          title: Text(
+                              "Peso: ${snapshot.data![index][DatabaseHelper.columnPeso].toStringAsFixed(2)} kg, Altura: ${snapshot.data![index][DatabaseHelper.columnAltura].toStringAsFixed(2)} m"),
+                          subtitle: Text(
+                              "IMC: ${snapshot.data![index][DatabaseHelper.columnImc].toStringAsFixed(2)} - ${snapshot.data![index][DatabaseHelper.columnClassificacao]}"),
+                        );
+                      },
+                    );
+                  } else if (snapshot.hasError) {
+                    return Text("Erro: ${snapshot.error}");
+                  } else {
+                    return const Center(child: CircularProgressIndicator());
+                  }
                 },
               ),
             ),
@@ -121,13 +136,4 @@ class _PesoAppState extends State<PesoApp> {
       ),
     );
   }
-}
-
-class Peso {
-  double peso;
-  double altura;
-  double imc;
-  String classificacao;
-
-  Peso({required this.peso, required this.altura, required this.imc, required this.classificacao});
 }
